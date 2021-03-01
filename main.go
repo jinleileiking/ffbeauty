@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	// "strconv"
+	"strconv"
 
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/spf13/cobra"
@@ -48,6 +48,7 @@ func cmdrun(cmd *cobra.Command, args []string) {
 	aCnt := 0
 	bpCnt := 0
 	lastPts := 0
+	size := 0
 	for _, f := range proResp.Frames {
 		// a
 		if f.KeyFrame == 1 && f.MediaType == "audio" {
@@ -62,12 +63,14 @@ func cmdrun(cmd *cobra.Command, args []string) {
 				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\t diff:%d\t",
 					bpCnt, aCnt, f.PktDts/1000, 0)
 			} else {
-				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\t diff:%d\t",
-					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts)
+				elapsed := int(f.PktDts/1000) - lastPts
+				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\t",
+					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000)
 			}
 			lastPts = int(f.PktDts / 1000)
 			aCnt = 0
 			bpCnt = 0
+			size = 0
 		}
 
 		// P
@@ -76,10 +79,17 @@ func cmdrun(cmd *cobra.Command, args []string) {
 			if f.PictType == "B" {
 				bpCnt += 1
 				fmt.Print("B")
-			}
-			if f.PictType == "P" {
+			} else if f.PictType == "P" {
 				bpCnt += 1
 				fmt.Print("P")
+			} else {
+				panic("err")
+			}
+
+			if s, err := strconv.Atoi(f.PktSize); err != nil {
+				panic(err)
+			} else {
+				size = size + s
 			}
 		}
 	}
