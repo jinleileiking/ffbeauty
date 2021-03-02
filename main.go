@@ -56,7 +56,9 @@ func cmdrun(cmd *cobra.Command, args []string) {
 	bpCnt := 0
 	lastPts := 0
 	size := 0
+	finalPts := 0
 	for _, f := range proResp.Frames {
+		finalPts = int(f.PktDts / 1000)
 		// a
 		if f.KeyFrame == 1 && f.MediaType == "audio" {
 			fmt.Print("A")
@@ -68,8 +70,8 @@ func cmdrun(cmd *cobra.Command, args []string) {
 					bpCnt, aCnt, f.PktDts/1000, 0)
 			} else {
 				elapsed := int(f.PktDts/1000) - lastPts
-				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\t",
-					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000)
+				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
+					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
 			}
 			lastPts = int(f.PktDts / 1000)
 			aCnt = 0
@@ -101,6 +103,10 @@ func cmdrun(cmd *cobra.Command, args []string) {
 			panic("frame to process")
 		}
 	}
+
+	elapsed := finalPts - lastPts
+	fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
+		bpCnt, aCnt, finalPts, finalPts-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
 
 	// table.Append(line)
 
