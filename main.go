@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	// "github.com/davecgh/go-spew/spew"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/spf13/cobra"
 	"io/ioutil"
 
@@ -23,7 +23,14 @@ var rootCmd = &cobra.Command{
 }
 
 func cmdrun(cmd *cobra.Command, args []string) {
-	data, err := ioutil.ReadFile(filename)
+
+	var err error
+	var data []byte
+	if filename == "" {
+		data, err = ioutil.ReadAll(os.Stdin)
+	} else {
+		data, err = ioutil.ReadFile(filename)
+	}
 
 	if err != nil {
 		fmt.Println("Open file failed, detail:", err.Error())
@@ -54,11 +61,8 @@ func cmdrun(cmd *cobra.Command, args []string) {
 		if f.KeyFrame == 1 && f.MediaType == "audio" {
 			fmt.Print("A")
 			aCnt += 1
-		}
-
-		// I
-		if f.KeyFrame == 1 && f.MediaType == "video" {
-
+		} else if f.KeyFrame == 1 && f.MediaType == "video" {
+			// I
 			if lastPts == 0 {
 				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\t diff:%d\t",
 					bpCnt, aCnt, f.PktDts/1000, 0)
@@ -71,18 +75,19 @@ func cmdrun(cmd *cobra.Command, args []string) {
 			aCnt = 0
 			bpCnt = 0
 			size = 0
-		}
-
-		// P
-		if f.KeyFrame == 0 && f.MediaType == "video" {
-
+		} else if f.KeyFrame == 0 && f.MediaType == "video" {
+			// P
 			if f.PictType == "B" {
 				bpCnt += 1
 				fmt.Print("B")
 			} else if f.PictType == "P" {
 				bpCnt += 1
 				fmt.Print("P")
+			} else if f.PictType == "I" {
+				bpCnt += 1
+				fmt.Print("i")
 			} else {
+				fmt.Print(f.PictType)
 				panic("err")
 			}
 
@@ -91,6 +96,9 @@ func cmdrun(cmd *cobra.Command, args []string) {
 			} else {
 				size = size + s
 			}
+		} else {
+			spew.Dump(f)
+			panic("frame to process")
 		}
 	}
 
@@ -101,7 +109,7 @@ func cmdrun(cmd *cobra.Command, args []string) {
 }
 
 func setupCmd() {
-	rootCmd.PersistentFlags().StringVarP(&filename, "file", "f", "", "flv file")
+	rootCmd.PersistentFlags().StringVarP(&filename, "file", "f", "", "flv file, if do not set file then read from stdin")
 	// rootCmd.PersistentFlags().BoolVar(&show_sei, "sei", false, "show sei info")
 	// rootCmd.PersistentFlags().BoolVar(&show_only_nalt, "simple", false, "only show nal type")
 	// rootCmd.PersistentFlags().BoolVar(&show_a, "a", false, "show audio")
