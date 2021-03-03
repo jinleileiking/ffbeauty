@@ -15,6 +15,7 @@ import (
 
 var filename string
 var showFrames bool
+var showPackets bool
 
 var rootCmd = &cobra.Command{
 	Use:   "ffbeauty",
@@ -23,10 +24,10 @@ var rootCmd = &cobra.Command{
 }
 
 func cmdRun(cmd *cobra.Command, args []string) {
-	if showFrames {
-		cmdFrames(cmd, args)
-	} else {
+	if showPackets {
 		cmdPackets(cmd, args)
+	} else {
+		cmdFrames(cmd, args)
 	}
 }
 
@@ -145,32 +146,45 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 
 	aCnt := 0
 	bpCnt := 0
-	lastPts := 0
+	lastDts := 0
 	size := 0
-	finalPts := 0
+	finalDts := 0
+	totalSize := 0
+	firstDts := 0
+
 	for _, f := range proResp.Frames {
-		finalPts = int(f.PktDts / 1000)
+		if f.PktDts != 0 && firstDts == 0 {
+			firstDts = int(f.PktDts / 1000)
+		}
+
+		finalDts = int(f.PktDts / 1000)
+		if s, err := strconv.Atoi(f.PktSize); err != nil {
+			panic(err)
+		} else {
+			totalSize = totalSize + s
+		}
+
 		// a
 		if f.KeyFrame == 1 && f.MediaType == "audio" {
 			fmt.Print("A")
 			aCnt += 1
 		} else if f.KeyFrame == 1 && f.MediaType == "video" {
 			// I
-			if lastPts == 0 {
+			if lastDts == 0 {
 				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\t diff:%d\t",
 					bpCnt, aCnt, f.PktDts/1000, 0)
 			} else {
-				elapsed := int(f.PktDts/1000) - lastPts
+				elapsed := int(f.PktDts/1000) - lastDts
 
 				if elapsed == 0 {
 					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
-						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, -1, -1, size)
+						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastDts, -1, -1, size)
 				} else {
 					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
-						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
 				}
 			}
-			lastPts = int(f.PktDts / 1000)
+			lastDts = int(f.PktDts / 1000)
 			aCnt = 0
 			bpCnt = 0
 			size = 0
@@ -201,16 +215,17 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	elapsed := finalPts - lastPts
+	elapsed := finalDts - lastDts
 	if elapsed == 0 {
 		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
-			bpCnt, aCnt, finalPts, finalPts-lastPts, -1, -1, size)
+			bpCnt, aCnt, finalDts, finalDts-lastDts, -1, -1, size)
 	} else {
 		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
-			bpCnt, aCnt, finalPts, finalPts-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+			bpCnt, aCnt, finalDts, finalDts-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
 	}
 
 	// table.Append(line)
+	fmt.Printf("\nTotal - size:%dB\ttime:%ds\tbr:%dKbps\n", totalSize, lastDts-firstDts, totalSize/(lastDts-firstDts)/1000*8)
 
 	return
 
@@ -218,12 +233,9 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 
 func setupCmd() {
 	rootCmd.PersistentFlags().StringVarP(&filename, "file", "f", "", "flv file, if do not set file then read from stdin")
-	rootCmd.PersistentFlags().BoolVar(&showFrames, "frame", false, "show frames")
-	// rootCmd.PersistentFlags().BoolVar(&show_only_nalt, "simple", false, "only show nal type")
-	// rootCmd.PersistentFlags().BoolVar(&show_a, "a", false, "show audio")
-	// rootCmd.PersistentFlags().BoolVar(&show_v, "v", true, "show video")
-	// rootCmd.PersistentFlags().BoolVar(&no_show_i, "non-key", false, "use with -v:  do not show keyframes")
-	rootCmd.MarkFlagRequired("file")
+	rootCmd.PersistentFlags().BoolVar(&showFrames, "frame", true, "show frames")
+	rootCmd.PersistentFlags().BoolVar(&showFrames, "packet", false, "show packets")
+	// rootCmd.MarkFlagRequired("file")
 }
 
 func main() {
