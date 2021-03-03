@@ -8,21 +8,112 @@ import (
 	"strconv"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"io/ioutil"
-
-	"github.com/olekukonko/tablewriter"
 )
 
 var filename string
+var showFrames bool
 
 var rootCmd = &cobra.Command{
 	Use:   "ffbeauty",
 	Short: "Show ffprobe like a beauty",
-	Run:   cmdrun,
+	Run:   cmdRun,
 }
 
-func cmdrun(cmd *cobra.Command, args []string) {
+func cmdRun(cmd *cobra.Command, args []string) {
+	if showFrames {
+		cmdFrames(cmd, args)
+	} else {
+		cmdPackets(cmd, args)
+	}
+}
+
+func cmdPackets(cmd *cobra.Command, args []string) {
+
+	var err error
+	var data []byte
+	if filename == "" {
+		data, err = ioutil.ReadAll(os.Stdin)
+	} else {
+		data, err = ioutil.ReadFile(filename)
+	}
+
+	if err != nil {
+		fmt.Println("Open file failed, detail:", err.Error())
+		os.Exit(0)
+	}
+
+	proResp := ProbePackets{}
+	if err := json.Unmarshal(data, &proResp); err != nil {
+		panic(err)
+	}
+
+	aCnt := 0
+	bpCnt := 0
+	lastDts := 0
+	size := 0
+	finalDts := 0
+
+	for _, packet := range proResp.Packets {
+		finalDts = int(packet.Dts / 1000)
+		// A
+		if packet.Flags == "K_" && packet.CodecType == "audio" {
+			fmt.Print("A")
+			aCnt += 1
+		} else if packet.Flags == "K_" && packet.CodecType == "video" {
+			// I
+			if lastDts == 0 {
+				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\t diff:%d\t",
+					bpCnt, aCnt, packet.Dts/1000, 0)
+			} else {
+				elapsed := int(packet.Dts/1000) - lastDts
+
+				if elapsed == 0 {
+					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
+						bpCnt, aCnt, packet.Dts/1000, int(packet.Dts/1000)-lastDts, -1, -1, size)
+
+				} else {
+					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
+						bpCnt, aCnt, packet.Dts/1000, int(packet.Dts/1000)-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+				}
+
+			}
+			lastDts = int(packet.Dts / 1000)
+			aCnt = 0
+			bpCnt = 0
+			size = 0
+		} else if packet.Flags == "__" && packet.CodecType == "video" {
+			// P
+			bpCnt += 1
+			fmt.Print("P")
+
+			if s, err := strconv.Atoi(packet.Size); err != nil {
+				panic(err)
+			} else {
+				size = size + s
+			}
+		} else {
+			spew.Dump(packet)
+			panic("packet to process")
+		}
+	}
+
+	elapsed := finalDts - lastDts
+	if elapsed == 0 {
+		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
+			bpCnt, aCnt, finalDts, finalDts-lastDts, -1, -1, size)
+	} else {
+		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
+			bpCnt, aCnt, finalDts, finalDts-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+	}
+
+	return
+
+}
+
+func cmdFrames(cmd *cobra.Command, args []string) {
 
 	var err error
 	var data []byte
@@ -70,8 +161,14 @@ func cmdrun(cmd *cobra.Command, args []string) {
 					bpCnt, aCnt, f.PktDts/1000, 0)
 			} else {
 				elapsed := int(f.PktDts/1000) - lastPts
-				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
-					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+
+				if elapsed == 0 {
+					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
+						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, -1, -1, size)
+				} else {
+					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
+						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+				}
 			}
 			lastPts = int(f.PktDts / 1000)
 			aCnt = 0
@@ -105,8 +202,13 @@ func cmdrun(cmd *cobra.Command, args []string) {
 	}
 
 	elapsed := finalPts - lastPts
-	fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
-		bpCnt, aCnt, finalPts, finalPts-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+	if elapsed == 0 {
+		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
+			bpCnt, aCnt, finalPts, finalPts-lastPts, -1, -1, size)
+	} else {
+		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
+			bpCnt, aCnt, finalPts, finalPts-lastPts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+	}
 
 	// table.Append(line)
 
@@ -116,7 +218,7 @@ func cmdrun(cmd *cobra.Command, args []string) {
 
 func setupCmd() {
 	rootCmd.PersistentFlags().StringVarP(&filename, "file", "f", "", "flv file, if do not set file then read from stdin")
-	// rootCmd.PersistentFlags().BoolVar(&show_sei, "sei", false, "show sei info")
+	rootCmd.PersistentFlags().BoolVar(&showFrames, "frame", false, "show frames")
 	// rootCmd.PersistentFlags().BoolVar(&show_only_nalt, "simple", false, "only show nal type")
 	// rootCmd.PersistentFlags().BoolVar(&show_a, "a", false, "show audio")
 	// rootCmd.PersistentFlags().BoolVar(&show_v, "v", true, "show video")
@@ -160,4 +262,20 @@ type FProbe struct {
 		TopFieldFirst           int64  `json:"top_field_first"`
 		Width                   int64  `json:"width"`
 	} `json:"frames"`
+}
+
+type ProbePackets struct {
+	Packets []struct {
+		CodecType    string `json:"codec_type"`
+		Dts          int64  `json:"dts"`
+		DtsTime      string `json:"dts_time"`
+		Duration     int64  `json:"duration"`
+		DurationTime string `json:"duration_time"`
+		Flags        string `json:"flags"`
+		Pos          string `json:"pos"`
+		Pts          int64  `json:"pts"`
+		PtsTime      string `json:"pts_time"`
+		Size         string `json:"size"`
+		StreamIndex  int64  `json:"stream_index"`
+	} `json:"packets"`
 }
