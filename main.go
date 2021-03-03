@@ -147,18 +147,22 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 	aCnt := 0
 	bpCnt := 0
 	lastDts := 0
-	size := 0
+	sizeP := 0
+	sizeA := 0
 	finalDts := 0
 	totalSize := 0
 	firstDts := 0
 
+	s := 0
 	for _, f := range proResp.Frames {
 		if f.PktDts != 0 && firstDts == 0 {
 			firstDts = int(f.PktDts / 1000)
 		}
 
 		finalDts = int(f.PktDts / 1000)
-		if s, err := strconv.Atoi(f.PktSize); err != nil {
+
+		var err error
+		if s, err = strconv.Atoi(f.PktSize); err != nil {
 			panic(err)
 		} else {
 			totalSize = totalSize + s
@@ -168,6 +172,7 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 		if f.KeyFrame == 1 && f.MediaType == "audio" {
 			fmt.Print("A")
 			aCnt += 1
+			sizeA = sizeA + s
 		} else if f.KeyFrame == 1 && f.MediaType == "video" {
 			// I
 			if lastDts == 0 {
@@ -176,18 +181,26 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 			} else {
 				elapsed := int(f.PktDts/1000) - lastDts
 
+				br := 0
+				fps := 0
 				if elapsed == 0 {
-					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
-						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastDts, -1, -1, size)
+					br = -1
+					fps = -1
 				} else {
-					fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB\t",
-						bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+					br = (sizeP + sizeA + s) / elapsed * 8 / 1000
+					fps = (bpCnt + 1) / elapsed
 				}
+
+				fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsizeI:%dB\tsizeP:%dB\tsizeA:%dB\t",
+					bpCnt, aCnt, f.PktDts/1000, int(f.PktDts/1000)-lastDts,
+					fps, br,
+					s, sizeP, sizeA)
 			}
 			lastDts = int(f.PktDts / 1000)
 			aCnt = 0
 			bpCnt = 0
-			size = 0
+			sizeP = 0
+			sizeA = 0
 		} else if f.KeyFrame == 0 && f.MediaType == "video" {
 			// P
 			if f.PictType == "B" {
@@ -204,25 +217,28 @@ func cmdFrames(cmd *cobra.Command, args []string) {
 				panic("err")
 			}
 
-			if s, err := strconv.Atoi(f.PktSize); err != nil {
-				panic(err)
-			} else {
-				size = size + s
-			}
+			sizeP = sizeP + s
 		} else {
 			spew.Dump(f)
 			panic("frame to process")
 		}
 	}
 
+	br := 0
+	fps := 0
 	elapsed := finalDts - lastDts
 	if elapsed == 0 {
-		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
-			bpCnt, aCnt, finalDts, finalDts-lastDts, -1, -1, size)
+		br = -1
+		fps = -1
 	} else {
-		fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsize:%dB",
-			bpCnt, aCnt, finalDts, finalDts-lastDts, (bpCnt+1)/elapsed, size/elapsed*8/1000, size)
+		br = (sizeP + sizeA + s) / elapsed * 8 / 1000
+		fps = (bpCnt + 1) / elapsed
 	}
+
+	fmt.Printf("\nBP:%d\tA:%d\tI pts:%d\tdiff:%d\tfps:%d\tbr:%dkbps\tsizeI:%dB\tsizeP:%dB\tsizeA:%dB\t",
+		bpCnt, aCnt, finalDts, finalDts-lastDts,
+		fps, br,
+		s, sizeP, sizeA)
 
 	// table.Append(line)
 	fmt.Printf("\nTotal - size:%dB\ttime:%ds\tbr:%dKbps\n", totalSize, lastDts-firstDts, totalSize/(lastDts-firstDts)/1000*8)
