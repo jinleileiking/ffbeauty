@@ -9,6 +9,11 @@ ffprobe -i ~/yourflv.flv -show_frames -print_format json  2>&1 > a
 ./ffbeauty -f ./a
 ```
 
+for stream:
+
+```
+ffprobe  -i  http://$SERVICE_IP/live/1.flv  -show_frames -print_format json -read_intervals "%+#10"  | ffbeauty
+```
 
 # Output
 
